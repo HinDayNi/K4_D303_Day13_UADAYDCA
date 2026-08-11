@@ -12,7 +12,7 @@
 - Điểm `validate_logs.py`: 100/100 (evidence: `submission/evidence/validate_logs_result.txt`)
 - Tổng số traces:
 - Số PII leak còn lại: 0
-- Link/đường dẫn dashboard:
+- Link/đường dẫn dashboard: `data/dashboard.html`, sinh bằng `python scripts/build_dashboard.py` từ `data/logs.jsonl`
 
 ## 3. Logging và tracing
 
@@ -31,10 +31,15 @@
 
 ## 5. Dashboard, SLO và alerts
 
-- Kết quả `validate_dashboard.py`:
-- Evidence dashboard:
-- SLO đã chọn và lý do:
-- Alert rules và runbook:
+- Kết quả `validate_dashboard.py`: `HỢP LỆ: 6/6 panel có trong dashboard contract` (evidence: `submission/evidence/validate_dashboard_result.txt`)
+
+- Evidence dashboard: `submission/evidence/dashboard_rag_slow_before.png` và `submission/evidence/dashboard_rag_slow_after.png`. Dashboard dựng bằng `scripts/build_dashboard.py`, đọc `data/logs.jsonl` và lấy ngưỡng/đơn vị/time range trực tiếp từ `config/dashboard.yaml` nên không thể lệch khỏi contract. Đủ 6 panel: Latency (p50/p95/p99), Traffic, Errors + breakdown, Cost, Tokens, Quality; mỗi panel có tên, đơn vị, cửa sổ 60 phút, refresh 30 giây và đường threshold. Kiểm tra runtime bằng `inject_incident.py --scenario rag_slow`: p95 tăng từ **1160 ms lên 3443 ms**, badge panel Latency chuyển sang "vượt ngưỡng", trong khi error rate, cost và quality giữ nguyên — chỉ một panel đổi trạng thái, đúng dấu hiệu sự cố nằm ở đường xử lý chứ không phải hệ thống hỏng toàn diện. Bảng số trong ảnh after cho thấy cả bốn phút: 09:57 (1160 ms), 09:58 (1171 ms), 10:06 (3631 ms), 10:07 (3443 ms). Chi tiết đặc tả trong `docs/dashboard-spec.md`.
+
+- SLO đã chọn và lý do (`config/slo.yaml`): giữ nguyên `objective` để khớp threshold trong `config/dashboard.yaml`, chỉ chọn lại `target` và thêm `error_budget_minutes`. `latency_p95_ms` 3000 ms/99.0 % — dùng p95 chứ không dùng mean vì người dùng chờ theo thời gian thực; chọn 99.0 thay vì 99.5 vì retrieval và LLM là phụ thuộc bên ngoài, giữ 403 phút error budget cho deploy. `error_rate_pct` 2 %/99.5 % — target cao hơn latency vì chậm còn dùng được, lỗi thì không. `daily_cost_usd` 2.5 USD/**95.0 %**, hạ từ 100.0 vì target 100 % không để lại error budget nào, khiến mọi dao động chi phí bình thường đều thành vi phạm SLO. `quality_score_avg` 0.75/95.0 % — chỉ là proxy heuristic nên dùng theo xu hướng, không dùng để page.
+
+- Alert rules và runbook (`config/alert_rules.yaml`, `docs/alerts.md`): 3 alert symptom-based, mỗi cái bắt một chế độ lỗi có thể inject được — `ChatResponsesTooSlow` (warning, p95 > 3000 ms, cửa sổ 10 phút, duy trì 5 phút) bắt `rag_slow`; `ChatRequestsFailing` (critical, error rate > 2 %, cửa sổ 5 phút, duy trì 2 phút) bắt `tool_fail`; `ChatCostPerRequestSpike` (warning, cost > 0.005 USD/request ≈ 2.5 lần baseline 0.001931, cửa sổ 15 phút, duy trì 10 phút) bắt `cost_spike`. Đặt tên theo triệu chứng người dùng, không theo tên implementation, vì tên hàm đổi khi code đổi còn triệu chứng thì không. Cả ba đều có `min_samples: 20` để một request lẻ ở mức tải thấp không page nhầm và để p95 không bị một request cold start kéo lệch — chính hiện tượng gặp ở CP0 khi p95 của 10 mẫu bằng luôn giá trị max 6915 ms. Ba runbook trong `docs/alerts.md` đều đi theo thứ tự Metrics → Traces → Logs, kèm lệnh cụ thể và mitigation tạm thời. `quality_score_avg` không có alert riêng vì là proxy heuristic dễ báo giả, chỉ theo dõi trên panel.
+
+- Hạn chế đã biết: `response_sent.latency_ms` đo bên trong `app/agent.py::run` nên **không tính thời gian request xếp hàng**. Cùng một lần chạy `--concurrency 5`, log ghi 1010–1148 ms trong khi client thực sự chờ 3157–5323 ms; với `rag_slow` bật thì client chờ tới 15400 ms mà dashboard chỉ báo 3443 ms. Hệ quả là alert `ChatResponsesTooSlow` có thể không kêu dù người dùng chờ rất lâu. `app/middleware.py` đã tính sẵn `elapsed_ms` end-to-end và trả ra header `x-response-time-ms` nhưng chưa ghi vào log; ghi thêm field đó là đủ để có độ trễ thật, không phải đổi contract.
 
 ## 6. Điều tra challenge
 
@@ -54,7 +59,7 @@ Với mỗi thành viên, ghi rõ nhiệm vụ và link commit/PR tương ứng.
 |---|---|---|---|
 | Thành viên 1 | Logging & PII | `scripts/collect_logging_evidence.py` + evidence Vai 1 | Structured log, correlation ID, PII redact, validate 100/100 |
 | Thành viên 2 | Tracing & Prompt Versioning | | |
-| Thành viên 3 | Metrics, Dashboard, SLO & Alerts | | |
+| Thành viên 3 | Metrics, Dashboard, SLO & Alerts | `380aea8` alert/SLO/runbook · `d3a25f6` sửa `percentile()` + `error_rate_pct` + `build_dashboard.py` · `5f96398` dashboard spec · `ce3868e` sửa layout + baseline | Percentile phải tính bằng nearest-rank và chỉ có nghĩa khi đủ mẫu: p95 của 10 request bằng luôn giá trị max, nên cold start 6915 ms bị nhầm thành baseline. Alert phải đặt theo triệu chứng người dùng kèm `for` và `min_samples`, nếu không sẽ page vì một request lẻ. Và chỉ số đo ở đâu thì chỉ nói được về chỗ đó — `latency_ms` đo trong agent nên bỏ sót thời gian xếp hàng, client chờ 15 giây mà dashboard báo 3.4 giây. |
 | Thành viên 4 | Incident, Integration, Report & Demo | | |
 
 ## 8. Phân công chi tiết cho 4 thành viên
