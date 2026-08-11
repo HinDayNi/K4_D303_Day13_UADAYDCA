@@ -72,6 +72,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             feature=body.feature,
             session_id=body.session_id,
             message=body.message,
+            correlation_id=request.state.correlation_id,
         )
         # Log thành công: metric nghiệp vụ + answer_preview an toàn; enrichment vẫn từ context.
         log.info(

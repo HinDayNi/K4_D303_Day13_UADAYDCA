@@ -27,6 +27,9 @@ def _compile_local_prompt(*, feature: str, docs: list[str], message: str) -> str
     )
 
 
+from .tracing import observe
+
+@observe(as_type="span")
 def resolve_prompt(
     client: Any,
     *,

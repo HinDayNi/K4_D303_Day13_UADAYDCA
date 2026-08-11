@@ -29,6 +29,9 @@ class RecordingLangfuseClient:
     def update_current_generation(self, **kwargs) -> None:
         self.generation_updates.append(kwargs)
 
+    def score_current_trace(self, **kwargs) -> None:
+        pass
+
 
 def test_agent_links_prompt_version_to_trace_and_generation(monkeypatch) -> None:
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "test-public-key")
@@ -45,11 +48,15 @@ def test_agent_links_prompt_version_to_trace_and_generation(monkeypatch) -> None
         feature="qa",
         session_id="session-01",
         message="Explain traces",
+        correlation_id="test-corr-id",
     )
 
     trace_metadata = client.trace_updates[-1]["metadata"]
     generation_update = client.generation_updates[-1]
     assert trace_metadata == {
+        "correlation_id": "test-corr-id",
+        "feature": "qa",
+        "model": "claude-sonnet-4-5",
         "prompt_name": "day13-chat",
         "prompt_label": "production",
         "prompt_version": "3",
