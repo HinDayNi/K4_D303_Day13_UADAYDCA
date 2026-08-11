@@ -138,6 +138,7 @@ def aggregate(records: list[dict], window: Window) -> dict:
 
     bs = window.buckets
     q_all = [v for values in qual.values() for v in values]
+    active = [c for c in traffic.values() if c]
     return {
         "buckets": bs,
         "latency": {
@@ -160,7 +161,10 @@ def aggregate(records: list[dict], window: Window) -> dict:
         "tokens_in_total": sum(tin.values()),
         "tokens_out_total": sum(tout.values()),
         "quality_mean": round(sum(q_all) / len(q_all), 3) if q_all else 0.0,
-        "rate_per_minute": round(requests / window.minutes, 2) if window.minutes else 0.0,
+        # Trung bình trên các phút CÓ traffic, không chia đều cho cả cửa sổ: lưu lượng
+        # lab đi theo cụm, chia cho 60 phút sẽ ra 0.33 req/phút trong khi biểu đồ
+        # per-minute đang hiển thị 10.
+        "rate_per_minute": round(sum(active) / len(active), 2) if active else 0.0,
     }
 
 
