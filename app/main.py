@@ -44,21 +44,36 @@ async def metrics() -> dict:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
-    # TODO: Enrich logs with request context (user_id_hash, session_id, feature, model, env)
-    # bind_contextvars(...)
-    
+    # Input: body request + model/env hệ thống.
+    # Hash user_id ngay tại biên API — log không bao giờ giữ user_id thô.
+    user_id_hash = hash_user_id(body.user_id)
+
+    # Bind metadata request-scoped TRƯỚC log đầu tiên để request_received / response_sent /
+    # request_failed cùng mang user_id_hash, session_id, feature, model, env (validator ≥80).
+    # correlation_id đã có từ middleware; không ghi đè ở đây.
+    bind_contextvars(
+        user_id_hash=user_id_hash,
+        session_id=body.session_id,
+        feature=body.feature,
+        model=agent.model,
+        env=os.getenv("APP_ENV", "dev"),
+    )
+
+    # Output log: preview đã scrub; metadata enrichment đi kèm qua contextvars.
     log.info(
         "request_received",
         service="api",
         payload={"message_preview": summarize_text(body.message)},
     )
     try:
+        # Chạy agent với identity/session gốc; log phía API chỉ thấy bản hash/preview.
         result = agent.run(
             user_id=body.user_id,
             feature=body.feature,
             session_id=body.session_id,
             message=body.message,
         )
+        # Log thành công: metric nghiệp vụ + answer_preview an toàn; enrichment vẫn từ context.
         log.info(
             "response_sent",
             service="api",
@@ -79,6 +94,7 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             quality_score=result.quality_score,
         )
     except Exception as exc:  # pragma: no cover
+        # Lỗi vẫn giữ cùng enrichment/correlation_id để TV4 nối Metrics → Traces → Logs.
         error_type = type(exc).__name__
         record_error(error_type)
         log.error(
