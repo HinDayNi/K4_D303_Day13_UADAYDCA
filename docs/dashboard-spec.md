@@ -68,18 +68,20 @@ Ghi chú trình bày:
 
 ## Baseline
 
-Đo lúc 2026-08-11 09:39–09:40 UTC, 20 request, chưa bật incident, sau khi warm-up:
+Đo lúc 2026-08-11 09:57–09:58 UTC, 20 request, chưa bật incident, sau khi warm-up:
 
 | Chỉ số | Giá trị |
 |---|---|
-| Latency p50 / p95 / p99 | 1045 / 1100 / 1148 ms |
+| Latency p50 / p95 / p99 | 1062 / 1160 / 1171 ms |
 | Traffic | 10 request/phút |
 | Error rate | 0.00 % |
-| Cost | 0.042585 USD tổng · 0.002129 USD/request |
-| Tokens in / out | 660 / 2707 |
+| Cost | 0.038625 USD tổng · 0.001931 USD/request |
+| Tokens in / out | 660 / 2443 (122.2 out/request) |
 | Quality trung bình | 0.880 |
 
 Baseline này thay thế số đo ở CP0 (p95 6915 ms). Giá trị cũ là cold start của request đầu tiên khi khởi tạo Langfuse client; với n = 10 thì p95 gần như bằng max nên một request chậm đã kéo lệch cả chỉ số. Luôn chạy `load_test.py` một lượt để warm-up rồi bỏ kết quả trước khi đo.
+
+Phân bố latency chia thành hai cụm rõ rệt: 414–435 ms (7 request) và 1050–1171 ms (13 request). Cụm chậm là những request phải gọi Langfuse để lấy prompt `day13-chat`; cụm nhanh là những request rơi vào lúc SDK đã cache kết quả nên không đi mạng. Đây là lý do p50 không đại diện cho hệ thống này và tại sao mọi ngưỡng đều đặt trên p95.
 
 ## Hạn chế đã biết: `latency_ms` không phải độ trễ người dùng cảm nhận
 
