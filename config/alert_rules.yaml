@@ -13,23 +13,63 @@
 # Nguồn dữ liệu: data/logs.jsonl (giống dashboard). Trace để khoanh vùng: Langfuse.
 
 alerts:
-  - name: high_latency_p95
+  - name: ChatResponsesTooSlow
     severity: warning
-    condition: "latency_p95 > 3000ms for 5 minutes"
+    page: false
+    sli: latency_p95_ms
+    condition: 'p95(response_sent.latency_ms) over 10m > 3000 for 5m, min 20 requests'
+    window: 10m
+    for: 5m
+    min_samples: 20
+    threshold:
+      aggregation: p95
+      operator: gt
+      value: 3000
+      unit: ms
+    dashboard_panel: latency
+    user_impact: 'Người dùng chờ hơn 3 giây mới thấy câu trả lời; giao diện chat có cảm giác treo.'
     type: symptom-based
-    owner: on-call-engineer
+    owner: thanh-vien-3-metrics-dashboard
     runbook: docs/alerts.md#alert-1
-  - name: elevated_error_rate
+
+  - name: ChatRequestsFailing
     severity: critical
-    condition: "error_rate_pct > 5 for 3 minutes"
+    page: true
+    sli: error_rate_pct
+    condition: 'count(request_failed) / count(request_received) over 5m * 100 > 2 for 2m, min 20 requests'
+    window: 5m
+    for: 2m
+    min_samples: 20
+    threshold:
+      aggregation: error_rate_pct
+      operator: gt
+      value: 2
+      unit: percent
+    dashboard_panel: errors
+    user_impact: 'Người dùng nhận HTTP 500 và không có câu trả lời nào; không có đường vòng nào tự xử lý được.'
     type: symptom-based
-    owner: on-call-engineer
+    owner: thanh-vien-4-incident-lead
     runbook: docs/alerts.md#alert-2
-  - name: cost_budget_exceeded
+
+  - name: ChatCostPerRequestSpike
     severity: warning
-    condition: "daily_cost_usd > 2.5"
+    page: false
+    sli: daily_cost_usd
+    condition: 'mean(response_sent.cost_usd) over 15m > 0.005 for 10m, min 20 requests'
+    window: 15m
+    for: 10m
+    min_samples: 20
+    threshold:
+      aggregation: mean
+      operator: gt
+      value: 0.005
+      unit: usd_per_request
+    dashboard_panel: cost
+    user_impact: >-
+      Chưa ảnh hưởng trực tiếp tới người dùng, nhưng chi phí mỗi câu trả lời tăng bất thường
+      sẽ đốt hết ngân sách 2.5 USD/ngày và dẫn tới cắt dịch vụ nếu không xử lý.
     type: symptom-based
-    owner: team-lead
+    owner: thanh-vien-3-metrics-dashboard
     runbook: docs/alerts.md#alert-3
 
 # Vì sao ngưỡng cost là 0.005 USD/request:

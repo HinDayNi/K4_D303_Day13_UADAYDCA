@@ -138,6 +138,7 @@ def aggregate(records: list[dict], window: Window) -> dict:
 
     bs = window.buckets
     q_all = [v for values in qual.values() for v in values]
+    active = [c for c in traffic.values() if c]
     return {
         "buckets": bs,
         "latency": {
@@ -160,7 +161,10 @@ def aggregate(records: list[dict], window: Window) -> dict:
         "tokens_in_total": sum(tin.values()),
         "tokens_out_total": sum(tout.values()),
         "quality_mean": round(sum(q_all) / len(q_all), 3) if q_all else 0.0,
-        "rate_per_minute": round(requests / window.minutes, 2) if window.minutes else 0.0,
+        # Trung bình trên các phút CÓ traffic, không chia đều cho cả cửa sổ: lưu lượng
+        # lab đi theo cụm, chia cho 60 phút sẽ ra 0.33 req/phút trong khi biểu đồ
+        # per-minute đang hiển thị 10.
+        "rate_per_minute": round(sum(active) / len(active), 2) if active else 0.0,
     }
 
 
@@ -196,6 +200,28 @@ def fmt(value: float, unit: str) -> str:
     return f"{int(value):,}" if value == int(value) else f"{value:,.2f}"
 
 
+COUNT_UNITS = {"requests_per_minute", "tokens"}
+
+
+def tick_values(ymax: float, unit: str) -> list[float]:
+    """Mốc trục y. Đại lượng đếm không được hiện giá trị lẻ."""
+    if unit in COUNT_UNITS and ymax <= 5:
+        return [float(i) for i in range(int(ymax) + 1)]
+    return [ymax * i / 4 for i in range(5)]
+
+
+def fmt_axis(value: float, unit: str, ymax: float) -> str:
+    """Định dạng mốc trục: mọi mốc trên cùng một trục dùng chung số chữ số."""
+    if unit == "usd":
+        decimals = 4 if ymax < 0.1 else (3 if ymax < 1 else 2)
+        return f"${value:,.{decimals}f}"
+    if unit == "percent":
+        return f"{value:,.1f}%" if ymax >= 1 else f"{value:,.2f}%"
+    if unit == "score_0_to_1":
+        return f"{value:,.2f}"
+    return f"{value:,.0f}"
+
+
 def x_of(i: int, n: int) -> float:
     return PLOT["l"] + (PLOT["w"] - PLOT["l"] - PLOT["r"]) * i / max(1, n - 1)
 
@@ -216,14 +242,13 @@ def bar_path(x: float, y: float, w: float, h: float, r: float = 4.0) -> str:
 
 def chrome(ymax: float, buckets: list[datetime], unit: str) -> str:
     out = []
-    for i in range(5):
-        value = ymax * i / 4
+    for value in tick_values(ymax, unit):
         y = y_of(value, ymax)
         out.append(
             f'<line x1="{PLOT["l"]}" y1="{y:.1f}" x2="{PLOT["w"] - PLOT["r"]}" y2="{y:.1f}" '
             f'stroke="var(--grid)" stroke-width="1"/>'
             f'<text x="{PLOT["l"] - 8}" y="{y + 4:.1f}" text-anchor="end" class="tick">'
-            f"{html.escape(fmt(value, unit))}</text>"
+            f"{html.escape(fmt_axis(value, unit, ymax))}</text>"
         )
     base = y_of(0, ymax)
     out.append(
@@ -246,12 +271,16 @@ def threshold_line(value: float, ymax: float, label: str) -> str:
     return (
         f'<line x1="{PLOT["l"]}" y1="{y:.1f}" x2="{PLOT["w"] - PLOT["r"]}" y2="{y:.1f}" '
         f'stroke="var(--critical)" stroke-width="1.5" stroke-dasharray="6 4"/>'
-        f'<text x="{PLOT["w"] - PLOT["r"]}" y="{y - 6:.1f}" text-anchor="end" '
+        # Nhãn đặt ở mép trái: dữ liệu mới nhất nằm bên phải, để nhãn ở đó sẽ đè
+        # lên nhãn điểm cuối của các đường.
+        f'<text x="{PLOT["l"] + 6}" y="{y - 6:.1f}" text-anchor="start" '
         f'class="tick slo">{html.escape(label)}</text>'
     )
 
 
-def line_series(values: list, ymax: float, var: str, name: str, unit: str) -> str:
+def line_series(
+    values: list, ymax: float, var: str, name: str, unit: str, label_end: bool = True
+) -> str:
     n = len(values)
     out: list[str] = []
     seg: list[str] = []
@@ -280,7 +309,7 @@ def line_series(values: list, ymax: float, var: str, name: str, unit: str) -> st
             )
 
     last = next((i for i in range(n - 1, -1, -1) if values[i] is not None), None)
-    if last is not None:
+    if label_end and last is not None:
         out.append(
             f'<text x="{x_of(last, n) - 8:.1f}" y="{y_of(values[last], ymax) - 10:.1f}" '
             f'text-anchor="end" class="endlabel">{html.escape(fmt(values[last], unit))}</text>'
@@ -371,9 +400,11 @@ def build_panels(config: dict, d: dict) -> str:
         p["latency"], d["p95_overall"],
         svg(chrome(ymax, bs, "ms")
             + threshold_line(p["latency"]["threshold"]["value"], ymax, "SLO p95 ≤ 3000 ms")
-            + line_series(d["latency"]["p50"], ymax, "ord1", "p50", "ms")
-            + line_series(d["latency"]["p95"], ymax, "ord2", "p95", "ms")
-            + line_series(d["latency"]["p99"], ymax, "ord3", "p99", "ms")),
+            # Ba đường hội tụ ở mép phải nên chỉ gắn nhãn cho p95 — đường mà SLO
+            # nói tới; p50 và p99 đọc qua legend và tooltip.
+            + line_series(d["latency"]["p50"], ymax, "ord1", "p50", "ms", label_end=False)
+            + line_series(d["latency"]["p99"], ymax, "ord3", "p99", "ms", label_end=False)
+            + line_series(d["latency"]["p95"], ymax, "ord2", "p95", "ms")),
         legend([("ord1", "p50"), ("ord2", "p95"), ("ord3", "p99")]),
     ))
 
