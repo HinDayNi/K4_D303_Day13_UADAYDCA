@@ -1,16 +1,49 @@
 service: day13-observability-lab
 window: 28d
+
+# objective = ngưỡng SLI phải đạt (giữ khớp với threshold trong config/dashboard.yaml).
+# target    = % thời gian trong cửa sổ 28 ngày mà SLI phải nằm trong objective.
+# error_budget = (100 - target)% x 40320 phút (28 ngày).
 slis:
   latency_p95_ms:
     objective: 3000
-    target: 99.5
-    note: Replace with your group's target
+    target: 99.0
+    error_budget_minutes: 403
+    note: >-
+      Người dùng chờ câu trả lời chat theo thời gian thực nên p95 là chỉ số quyết định,
+      không dùng mean. Chọn 99.0 thay vì 99.5 vì retrieval + LLM là phụ thuộc bên ngoài,
+      giữ 403 phút error budget cho deploy và biến động nhà cung cấp.
+
   error_rate_pct:
     objective: 2
-    target: 99.0
+    target: 99.5
+    error_budget_minutes: 201
+    note: >-
+      Request lỗi là triệu chứng nặng nhất: người dùng không nhận được gì. Đặt target cao
+      hơn latency vì chậm còn dùng được, lỗi thì không.
+
   daily_cost_usd:
     objective: 2.5
-    target: 100.0
+    target: 95.0
+    error_budget_minutes: 2016
+    note: >-
+      Hạ target 100.0 xuống 95.0 vì target 100% không để lại error budget nào, khiến mọi
+      dao động chi phí bình thường đều thành vi phạm SLO. Chi phí là ràng buộc ngân sách,
+      không phải cam kết với người dùng, nên chấp nhận vượt ngắn hạn miễn xu hướng 28 ngày
+      vẫn trong ngưỡng.
+
   quality_score_avg:
     objective: 0.75
     target: 95.0
+    error_budget_minutes: 2016
+    note: >-
+      quality_score là proxy heuristic (app/agent.py::_heuristic_quality), không phải đánh
+      giá chất lượng thật, nên dùng để phát hiện suy giảm theo xu hướng chứ không dùng để
+      page. Baseline đo được 0.88, cách objective 0.75 một khoảng an toàn.
+
+# Baseline đo lúc 2026-08-11, n=10 request, chưa bật incident:
+#   latency p50=1432ms, p95=6915ms (cold start, xem ghi chú), cost=0.001965 USD/request,
+#   tokens_out=124.4/request, quality=0.88, error_rate=0.00%
+# Ghi chú p95: với n=10 thì p95 gần như bằng max. Giá trị 6915ms đến từ request đầu tiên
+# (khởi tạo Langfuse client). Baseline p95 dùng để so sánh phải đo lại sau khi warm-up và
+# với n >= 100 request.

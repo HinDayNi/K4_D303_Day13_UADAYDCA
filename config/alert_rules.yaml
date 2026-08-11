@@ -1,19 +1,90 @@
+# Alert rules — Day 13 Observability
+#
+# Nguyên tắc thiết kế:
+# 1. Mỗi alert mô tả TRIỆU CHỨNG người dùng cảm nhận được và gắn với một SLI trong
+#    config/slo.yaml. Không đặt alert theo tên implementation nội bộ (rag_slow, tool_fail,
+#    cost_spike) vì tên đó đổi khi code đổi, còn triệu chứng thì không.
+# 2. Mỗi alert có `window` (khoảng tổng hợp), `for` (thời gian duy trì trước khi bắn) và
+#    `min_samples` (số request tối thiểu) để tránh flapping và tránh page vì một request lẻ.
+# 3. `condition` là pseudocode mô tả phép tính; `threshold` là dạng máy đọc được — cùng quy
+#    ước với `query` và `threshold` trong config/dashboard.yaml.
+# 4. severity: critical = page ngay; warning = tạo ticket và xử lý trong giờ làm việc.
+#
+# Nguồn dữ liệu: data/logs.jsonl (giống dashboard). Trace để khoanh vùng: Langfuse.
+
 alerts:
-  - name: TODO_alert_1
-    severity: TODO
-    condition: TODO
+  - name: ChatResponsesTooSlow
+    severity: warning
+    page: false
+    sli: latency_p95_ms
+    condition: 'p95(response_sent.latency_ms) over 10m > 3000 for 5m, min 20 requests'
+    window: 10m
+    for: 5m
+    min_samples: 20
+    threshold:
+      aggregation: p95
+      operator: gt
+      value: 3000
+      unit: ms
+    dashboard_panel: latency
+    user_impact: 'Người dùng chờ hơn 3 giây mới thấy câu trả lời; giao diện chat có cảm giác treo.'
     type: symptom-based
-    owner: TODO
+    owner: thanh-vien-3-metrics-dashboard
     runbook: docs/alerts.md#alert-1
-  - name: TODO_alert_2
-    severity: TODO
-    condition: TODO
+
+  - name: ChatRequestsFailing
+    severity: critical
+    page: true
+    sli: error_rate_pct
+    condition: 'count(request_failed) / count(request_received) over 5m * 100 > 2 for 2m, min 20 requests'
+    window: 5m
+    for: 2m
+    min_samples: 20
+    threshold:
+      aggregation: error_rate_pct
+      operator: gt
+      value: 2
+      unit: percent
+    dashboard_panel: errors
+    user_impact: 'Người dùng nhận HTTP 500 và không có câu trả lời nào; không có đường vòng nào tự xử lý được.'
     type: symptom-based
-    owner: TODO
+    owner: thanh-vien-4-incident-lead
     runbook: docs/alerts.md#alert-2
-  - name: TODO_alert_3
-    severity: TODO
-    condition: TODO
+
+  - name: ChatCostPerRequestSpike
+    severity: warning
+    page: false
+    sli: daily_cost_usd
+    condition: 'mean(response_sent.cost_usd) over 15m > 0.005 for 10m, min 20 requests'
+    window: 15m
+    for: 10m
+    min_samples: 20
+    threshold:
+      aggregation: mean
+      operator: gt
+      value: 0.005
+      unit: usd_per_request
+    dashboard_panel: cost
+    user_impact: >-
+      Chưa ảnh hưởng trực tiếp tới người dùng, nhưng chi phí mỗi câu trả lời tăng bất thường
+      sẽ đốt hết ngân sách 2.5 USD/ngày và dẫn tới cắt dịch vụ nếu không xử lý.
     type: symptom-based
-    owner: TODO
+    owner: thanh-vien-3-metrics-dashboard
     runbook: docs/alerts.md#alert-3
+
+# Vì sao ngưỡng cost là 0.005 USD/request:
+#   baseline đo được 0.001965 USD/request (n=10, 2026-08-11) => ngưỡng ~2.5x baseline,
+#   đủ cao để bỏ qua dao động độ dài câu trả lời bình thường, đủ thấp để bắt được lỗi làm
+#   output phình gấp nhiều lần.
+#
+# Vì sao alert theo cost/request thay vì theo tổng ngân sách ngày:
+#   tổng chi phí ngày là chỉ số trễ — khi nó vượt 2.5 USD thì tiền đã tiêu mất rồi.
+#   Chi phí trung bình mỗi request là chỉ số sớm, phát hiện ngay khi hành vi đổi.
+#   Ngưỡng ngân sách ngày vẫn được theo dõi trên panel `cost` và được kiểm tra ở bước 1
+#   của runbook alert-3.
+#
+# Vì sao quality_score_avg không có alert riêng:
+#   đây là proxy heuristic tính trong app (app/agent.py::_heuristic_quality), không phải
+#   đánh giá chất lượng thật, nên nó suy giảm chậm và dễ báo động giả. Chỉ số này được theo
+#   dõi trên panel `quality` với SLO line 0.75 và review theo xu hướng, không dùng để page.
+#   Nếu cần chuyển thành alert: mean(quality_score) over 60m < 0.75 for 30m, severity warning.
