@@ -9,15 +9,15 @@
 
 ## 2. Kết quả kỹ thuật
 
-- Điểm `validate_logs.py`:
+- Điểm `validate_logs.py`: 100/100 (evidence: `submission/evidence/validate_logs_result.txt`)
 - Tổng số traces:
-- Số PII leak còn lại:
+- Số PII leak còn lại: 0
 - Link/đường dẫn dashboard:
 
 ## 3. Logging và tracing
 
-- Evidence correlation ID:
-- Evidence PII redaction:
+- Evidence correlation ID: `submission/evidence/log_correlation_id_sample.jsonl` (vd. `req-58374a00`)
+- Evidence PII redaction: `submission/evidence/log_pii_redaction_sample.jsonl` (email/SĐT/thẻ → `[REDACTED_*]`)
 - Evidence trace waterfall:
 - Giải thích một span đáng chú ý:
 
@@ -52,7 +52,7 @@ Với mỗi thành viên, ghi rõ nhiệm vụ và link commit/PR tương ứng.
 
 | Thành viên | Phần việc | Commit/PR | Điều đã học |
 |---|---|---|---|
-| Thành viên 1 | Logging & PII | | |
+| Thành viên 1 | Logging & PII | `scripts/collect_logging_evidence.py` + evidence Vai 1 | Structured log, correlation ID, PII redact, validate 100/100 |
 | Thành viên 2 | Tracing & Prompt Versioning | | |
 | Thành viên 3 | Metrics, Dashboard, SLO & Alerts | | |
 | Thành viên 4 | Incident, Integration, Report & Demo | | |

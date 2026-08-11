@@ -2,6 +2,10 @@
 
 Mỗi alert phải dựa trên triệu chứng người dùng hoặc SLO, không dựa trực tiếp vào tên implementation nội bộ.
 
+Định nghĩa máy đọc được nằm trong [`config/alert_rules.yaml`](../config/alert_rules.yaml); SLI và error budget nằm trong [`config/slo.yaml`](../config/slo.yaml). Ba bước kiểm tra của mọi runbook đều đi theo cùng một thứ tự: **Metrics xác định triệu chứng và khoảng thời gian → Traces khoanh vùng span bất thường → Logs chứng minh nguyên nhân**. Không kết luận khi mới có một lớp evidence.
+
+Baseline tham chiếu (đo 2026-08-11, n=10 request, chưa bật incident): latency p50 1432 ms, cost 0.001965 USD/request, tokens_out 124.4/request, quality 0.88, error rate 0.00 %.
+
 ## Alert 1
 
 - Tên: `high_latency_p95`
