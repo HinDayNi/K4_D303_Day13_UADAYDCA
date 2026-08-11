@@ -26,8 +26,8 @@ class LabAgent:
         self.model = model
         self.llm = FakeLLM(model=model)
 
-    @observe(as_type="generation", capture_input=False, capture_output=False)
-    def run(self, user_id: str, feature: str, session_id: str, message: str) -> AgentResult:
+    @observe()
+    def run(self, user_id: str, feature: str, session_id: str, message: str, correlation_id: str) -> AgentResult:
         started = time.perf_counter()
         docs = retrieve(message)
         langfuse_client = get_langfuse_client()
@@ -38,22 +38,9 @@ class LabAgent:
             message=message,
             enabled=tracing_enabled(),
         )
-        response = self.llm.generate(prompt.text)
-        quality_score = self._heuristic_quality(message, response.text, docs)
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        cost_usd = self._estimate_cost(response.usage.input_tokens, response.usage.output_tokens)
 
-        langfuse_client.update_current_trace(
-            user_id=hash_user_id(user_id),
-            session_id=session_id,
-            tags=["lab", feature, self.model],
-            metadata={
-                "prompt_name": prompt.name,
-                "prompt_label": prompt.label,
-                "prompt_version": prompt.version,
-                "prompt_source": prompt.source,
-            },
-        )
+        response = self.llm.generate(prompt.text)
+        
         langfuse_client.update_current_generation(
             model=self.model,
             metadata={
@@ -69,8 +56,32 @@ class LabAgent:
                 "prompt_tokens": response.usage.input_tokens,
                 "completion_tokens": response.usage.output_tokens,
             },
-            cost_details={"total": cost_usd},
             prompt=prompt.managed_prompt,
+        )
+        quality_score = self._heuristic_quality(message, response.text, docs)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        cost_usd = self._estimate_cost(response.usage.input_tokens, response.usage.output_tokens)
+
+        langfuse_client.update_current_trace(
+            name="chat_request",
+            user_id=hash_user_id(user_id),
+            session_id=session_id,
+            tags=["lab", feature, self.model],
+            metadata={
+                "correlation_id": correlation_id,
+                "feature": feature,
+                "model": self.model,
+                "prompt_name": prompt.name,
+                "prompt_label": prompt.label,
+                "prompt_version": prompt.version,
+                "prompt_source": prompt.source,
+            },
+        )
+        
+        langfuse_client.score_current_trace(
+            name="quality",
+            value=quality_score,
+            data_type="NUMERIC"
         )
 
         metrics.record_request(
