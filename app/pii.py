@@ -35,6 +35,7 @@ def scrub_text(text: str) -> str:
     safe = text
     for name, pattern in PII_PATTERNS.items():
         safe = re.sub(pattern, f"[REDACTED_{name.upper()}]", safe)
+        print(f"[Scrubbed] {name}: {safe}")  # Debug: log từng bước scrub PII
     return safe
 
 

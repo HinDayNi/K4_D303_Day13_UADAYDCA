@@ -195,24 +195,34 @@ def main() -> None:
             continue
         try:
             records.append(json.loads(line))
+            print(f"[Loaded] {line[:80]}...")  # Debug: log từng dòng load JSONL
         except json.JSONDecodeError:
+            print(f"[Error] Failed to decode line: {line[:80]}...")
             continue
 
     correlation_samples, pii_samples = pick_evidence_lines(records)
+    print(f"[Evidence] {len(correlation_samples)} correlation_id samples, {len(pii_samples)} PII samples")
+    print(f"[Evidence] Writing to {SAMPLE_CORR.relative_to(REPO_ROOT)} and {SAMPLE_PII.relative_to(REPO_ROOT)}")
     write_jsonl(SAMPLE_CORR, correlation_samples)
+    print(f"[Evidence] Wrote {SAMPLE_CORR.relative_to(REPO_ROOT)}")
     write_jsonl(SAMPLE_PII, pii_samples)
     write_handoff(score, len(correlation_samples), len(pii_samples))
 
-    print("--- Evidence written ---")
-    for path in (VALIDATE_OUT, SAMPLE_CORR, SAMPLE_PII, HANDOFF_PATH):
-        print(f"  {path.relative_to(REPO_ROOT)}")
+    # print("--- Evidence written ---")
+    # for path in (VALIDATE_OUT, SAMPLE_CORR, SAMPLE_PII, HANDOFF_PATH):
+    #     print(f"  {path.relative_to(REPO_ROOT)}")
 
     if score < 80:
         raise SystemExit(
             f"Chưa đạt checkpoint Vai 1: {score}/100 (< 80). "
             "Kiểm tra correlation_id, enrichment và PII rồi chạy lại."
         )
+    
     print(f"[done] Checkpoint Vai 1 đạt {score}/100 — sẵn sàng bàn giao TV4.")
+    print(f"[done] Evidence: {VALIDATE_OUT.relative_to(REPO_ROOT)}")
+    print(f"[done] Evidence: {SAMPLE_CORR.relative_to(REPO_ROOT)}")
+    print(f"[done] Evidence: {SAMPLE_PII.relative_to(REPO_ROOT)}")
+    print(f"[done] Handoff: {HANDOFF_PATH.relative_to(REPO_ROOT)}")
 
 
 if __name__ == "__main__":
