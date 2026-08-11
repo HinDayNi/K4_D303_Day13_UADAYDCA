@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections import Counter
 from statistics import mean
 
@@ -29,15 +30,27 @@ def record_error(error_type: str) -> None:
 
 
 def percentile(values: list[int], p: int) -> float:
+    """Percentile theo nearest-rank: phần tử thứ ceil(p/100 * N) của dãy đã sắp xếp.
+
+    Dùng math.ceil thay cho round(x + 0.5) vì round() của Python làm tròn về số chẵn
+    (banker's rounding), khiến chỉ số lệch một bậc không nhất quán — ví dụ p50 của 10
+    mẫu trả về phần tử thứ 6 thay vì thứ 5, làm latency báo cao hơn thực tế.
+    """
     if not values:
         return 0.0
     items = sorted(values)
-    idx = max(0, min(len(items) - 1, round((p / 100) * len(items) + 0.5) - 1))
+    idx = max(0, min(len(items) - 1, math.ceil(p / 100 * len(items)) - 1))
     return float(items[idx])
 
 
 
 def snapshot() -> dict:
+    # TRAFFIC chỉ đếm request thành công (record_request gọi sau khi agent chạy xong),
+    # nên tổng số request nhận được là TRAFFIC cộng với số request lỗi.
+    total_errors = sum(ERRORS.values())
+    total_requests = TRAFFIC + total_errors
+    error_rate = (total_errors / total_requests * 100) if total_requests else 0.0
+
     return {
         "traffic": TRAFFIC,
         "latency_p50": percentile(REQUEST_LATENCIES, 50),
@@ -47,6 +60,7 @@ def snapshot() -> dict:
         "total_cost_usd": round(sum(REQUEST_COSTS), 4),
         "tokens_in_total": sum(REQUEST_TOKENS_IN),
         "tokens_out_total": sum(REQUEST_TOKENS_OUT),
+        "error_rate_pct": round(error_rate, 2),
         "error_breakdown": dict(ERRORS),
         "quality_avg": round(mean(QUALITY_SCORES), 4) if QUALITY_SCORES else 0.0,
     }
